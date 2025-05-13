@@ -77,7 +77,7 @@ void	lstclear(t_tokens **head)
 	}
 }
 
-void	ft_lstaddback(t_tokens **head, int type)
+void	ft_lstaddback(t_tokens **head, int type, FILE *fp)
 {
 	t_tokens	*new;
     t_tokens    *current;
@@ -85,9 +85,11 @@ void	ft_lstaddback(t_tokens **head, int type)
 	new = malloc(sizeof(t_tokens));
 	if (new == NULL)
 	{
+		fclose(fp);
 		lstclear(head);
 	}
     new->type = type;
+	new->next = NULL;
     current = *head;
     if (current == NULL)
     {
@@ -97,4 +99,11 @@ void	ft_lstaddback(t_tokens **head, int type)
     while (current->next)
         current = current->next;
     current->next = new;
+}
+
+void    fatal_error_handle(t_tokens **head)
+{
+    write(2, "malloc failure\n", 16);
+    lstclear(head);
+    exit(1);
 }
