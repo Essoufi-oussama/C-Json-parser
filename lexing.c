@@ -4,19 +4,25 @@ int	check_first_and_last(t_tokens **tokens)
 {
 	int			i;
 	t_tokens	*current;
+	int			first;
 
 	i = 0;
 	current = *tokens;
-	if (current == NULL || current->type != OPENING_BRACKET)
+	first = current->type;
+	if (current == NULL || (current->type != OPENING_BRACKET
+			&& current->type != OPENING_ARRAY))
 		error(tokens);
 	while (current->next)
 	{
 		current = current->next;
 		i++;
 	}
-	if (current->type != CLOSING_BRACKET)
+	if (current->type != CLOSING_BRACKET && current->type != CLOSING_ARRAY)
 		error(tokens);
-	return(i);
+	if ((first == OPENING_BRACKET && current->type != CLOSING_BRACKET)
+		|| (first == OPENING_ARRAY && current->type != CLOSING_ARRAY))
+		error(tokens);
+	return (i);
 }
 
 void	check_unopenned_paranth(t_tokens **tokens)
@@ -63,65 +69,86 @@ void	check_unopenned_paranth(t_tokens **tokens)
 		error(tokens);
 }
 
-void	check_array(t_tokens **current, t_tokens **tokens)
+void	check_array(t_tokens **current, t_tokens **tokens, int i)
 {
 	*current = (*current)->next;
+	if ((*current)->type == OPENING_ARRAY)
+		check_array(current, tokens, i + 1);
+	if (i >= 20)
+		error(tokens);
 	while ((*current)->type != CLOSING_ARRAY)
 	{
-		if ((*current)->type != QUOTED_WORD && (*current)->type != CLOSING_ARRAY)
-			error(tokens);
+		if ((*current)->type == OPENING_BRACKET)
+			check_bracket(current, tokens);
+		else if ((*current)->type == OPENING_ARRAY)
+			check_array(current, tokens, 1);
 		else
 			*current = (*current)->next;
 		if ((*current)->type != COMMA && (*current)->type != CLOSING_ARRAY)
 			error(tokens);
-		if ((*current)->type == COMMA) 
+		if ((*current)->type == COMMA && (*current)->next->type != CLOSING_ARRAY)
 			*current = (*current)->next;
 	}
 	*current = (*current)->next;
 }
 
-void	check_bracket(t_tokens **current, t_tokens **tokens)
+void	check_key(t_tokens **current, t_tokens **tokens)
 {
-	if ((*current)->type == OPENING_BRACKET)
-		*current = (*current)->next;
-	if ((*current)->type == CLOSING_BRACKET)
-	{
-		*current = (*current)->next;
-		return ;
-	}
-	// check key
-	if ((*current)->type != QUOTED_WORD && (*current)->next->type != DOUBLE_POINT)\
+	if ((*current)->type != QUOTED_WORD)
 		error(tokens);
-	else
-		*current = (*current)->next->next;
-	if ((*current)->type != QUOTED_WORD && (*current)->type != UNQUOTED_WORD && (*current)->type != OPENING_ARRAY && (*current)->type != OPENING_BRACKET)
+	*current = (*current)->next;
+	if ((*current)->type != DOUBLE_POINT)
+		error(tokens);
+	*current = (*current)->next;
+}
+
+void	check_value(t_tokens **current, t_tokens **tokens)
+{
+	if ((*current)->type != QUOTED_WORD && (*current)->type != UNQUOTED_WORD
+		&& (*current)->type != OPENING_ARRAY
+		&& (*current)->type != OPENING_BRACKET)
 		error(tokens);
 	else if ((*current)->type == OPENING_BRACKET)
 		check_bracket(current, tokens);
 	else if ((*current)->type == OPENING_ARRAY)
-		check_array(current, tokens);
+		check_array(current, tokens, 1);
 	else
 		*current = (*current)->next;
 	if ((*current)->type != COMMA && (*current)->type != CLOSING_BRACKET)
 		error(tokens);
 	if ((*current)->type == COMMA && (*current)->next->type == CLOSING_BRACKET)
 		error(tokens);
-	(*current) = (*current)->next;
 }
 
-void	check_key_value(t_tokens **tokens)
+void	check_bracket(t_tokens **current, t_tokens **tokens)
+{
+	*current = (*current)->next;
+	while (*current && (*current)->type != CLOSING_BRACKET)
+	{
+		check_key(current, tokens);
+		check_value(current, tokens);
+		if ((*current)->type != CLOSING_BRACKET)
+			(*current) = (*current)->next;
+	}
+	*current = (*current)->next;
+}
+
+void	check_tokens(t_tokens **tokens)
 {
 	t_tokens	*current;
 
 	current = *tokens;
-    while(current)
-    {
-		check_bracket(&current, tokens);
-    }
+	while (current)
+	{
+		if (current->type == OPENING_ARRAY)
+			check_array(&current, tokens, 1);
+		else
+			check_bracket(&current, tokens);
+	}
 }
 
 void	lexing(t_tokens **tokens)
 {
 	check_unopenned_paranth(tokens);
-	check_key_value(tokens);
+	check_tokens(tokens);
 }

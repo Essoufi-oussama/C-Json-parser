@@ -8,6 +8,7 @@
 typedef struct s_tokens
 {
 	int				type;
+	int				number;
 	struct s_tokens	*next;
 }					t_tokens;
 
@@ -32,3 +33,6 @@ void				fatal_error_handle(t_tokens **head);
 void				check_unopenned_paranth(t_tokens **tokens);
 void				error(t_tokens **head);
 void				lexing(t_tokens **tokens);
+void		check_bracket(t_tokens **current, t_tokens **tokens);
+void	error_in_parsing(FILE *fp, char *line, t_tokens **head);
+

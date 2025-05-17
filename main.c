@@ -1,19 +1,26 @@
 #include "header.h"
 
-void	error(t_tokens **head)
+void	check_hex_value(char *line, int i, t_tokens **head, FILE *fp)
 {
-	t_tokens	*current;
-	t_tokens	*next;
+	if (!line[i])
+		error_in_parsing(fp, line, head);
+	if ((line[i] >= 'A' && line[i] <= 'F' )|| (line[i] >= 'a' && line[i] <= 'f') || (line[i] >= '0' && line[i] <= '9'))
+		return ;
+	error_in_parsing(fp, line, head);
+}
 
-	write(2, "Error: Invalid JSON\n", 21);
-	current = *head;
-	while (current)
+void	escape_handle(char *line, int *i, t_tokens **head, FILE *fp)
+{
+	(*i)++;
+	if(line[*i] == 'u')
 	{
-		next = current->next;
-		free(current);
-		current = next;
+		(*i)++;
+		for (int j = 0; j < 4; j++)
+			check_hex_value(line, *i + j, head, fp);
+		*i = *i + 4;
 	}
-	exit(1);
+	else if (line[*i] != '\"' && line[*i] != '\\' && line[*i] != '/' && line[*i] != 'b' && line[*i] != 'f' && line[*i] != 'n' && line[*i] != 'r' && line[*i] != 't')
+		error_in_parsing(fp, line, head);
 }
 
 void	add_quoted_word(char *line, int *i, t_tokens **head, FILE *fp)
@@ -25,13 +32,16 @@ void	add_quoted_word(char *line, int *i, t_tokens **head, FILE *fp)
 	else
 	{
 		while (line[*i] && line[*i] != '"')
-			(*i)++;
-		if (!line[*i])
 		{
-			fclose(fp);
-			free(line);
-			error(head);
+			// check_escape_values
+			if (line[*i] =='\t' || line[*i] =='\n')
+				error_in_parsing(fp, line, head);
+			if (line[*i] =='\\')
+				escape_handle(line, i, head, fp);
+			(*i)++;
 		}
+		if (!line[*i])
+			error_in_parsing(fp, line, head);
 	}
 }
 
@@ -42,41 +52,52 @@ void	add_unquoted_word(char *line, int *i, t_tokens **head, FILE *fp)
 	j = *i;
 	while (line[*i] && isalpha(line[*i]))
 		(*i)++;
-	if (*i - j < 4 || *i - j > 5)
-	{
-		fclose(fp);
-		free(line);
-		error(head);
-	}
-	if (strncmp(line + j, "null", 4) == 0 || strncmp(line + j, "false", 5) == 0
-		|| strncmp(line + j, "true", 4) == 0)
+	// only null false or true are allowed in unquoted word
+	if ((strncmp(line + j, "null", 4) == 0|| strncmp(line + j, "true", 4) == 0) && *i - j == 4)
+		ft_lstaddback(head, UNQUOTED_WORD, fp);
+	else if (strncmp(line + j, "false", 5) == 0 && *i - j == 5)
 		ft_lstaddback(head, UNQUOTED_WORD, fp);
 	else
-	{
-		fclose(fp);
-		free(line);
-		error(head);
-	}
+		error_in_parsing(fp, line, head);
 	(*i)--;
+}
+
+void	check_exponential(int *e_count, int *i, char *line, FILE *fp, t_tokens **head)
+{
+	(*e_count)++;
+	(*i)++;
+	if (line[*i] == '+' || line[*i] == '-')
+		(*i)++;
+	if (*e_count > 1 || !isdigit(line[*i]))
+		error_in_parsing(fp, line, head);
 }
 
 void	add_number(char *line, int *i, t_tokens **head, FILE *fp)
 {
-	int		j;
-	char	c;
-
-	j = *i;
-	while (line[*i] && isdigit(line[*i]))
+	int		e_count = 0;
+	int		float_count = 0;
+	//numbers cant have leading zero
+	if (line[*i] == '0'  && isdigit(line[*i + 1]))
+		error_in_parsing(fp, line, head);
+	if (line[*i] == '-')
 		(*i)++;
-	c = line[*i];
-	if (isprint(c) && (c != ',' && c != '}' && c != '{' && c != '[' && c != ']'
-			&& c != ':'))
+	while (line[*i] && isdigit(line[*i]))
 	{
-		write(2, &c, 1);
-		fclose(fp);
-		free(line);
-		error(head);
+		(*i)++;
+		if (line[*i] == 'e' || line[*i] == 'E')
+			check_exponential(&e_count, i, line , fp, head);
+		else if (line[*i] == '.')
+		{
+			float_count++;
+			(*i)++;
+			if (float_count > 1)
+				error_in_parsing(fp, line, head);
+		}
 	}
+	char c = line[*i];
+	if (isprint(c) && (c != ',' && c != '}' && c != '{' && c != '[' && c != ']'
+		&& c != ':' && c != ' '))
+		error_in_parsing(fp, line, head);
 	ft_lstaddback(head, UNQUOTED_WORD, fp);
 	(*i)--;
 }
@@ -94,7 +115,7 @@ void	tokenize(t_tokens **head, char *line, FILE *fp)
 			add_quoted_word(line, &i, head, fp);
 		else if (isalpha(line[i]))
 			add_unquoted_word(line, &i, head, fp);
-		else if (isdigit(line[i]))
+		else if (isdigit(line[i]) || line[i] == '-')
 			add_number(line, &i, head, fp);
 		else if (line[i] == '{')
 			ft_lstaddback(head, OPENING_BRACKET, fp);
@@ -108,17 +129,13 @@ void	tokenize(t_tokens **head, char *line, FILE *fp)
 			ft_lstaddback(head, COMMA, fp);
 		else if (line[i] == ':')
 			ft_lstaddback(head, DOUBLE_POINT, fp);
-		else if (!isprint(line[i]) || line[i] == 32)
+		else if (!isprint(line[i]) || line[i] == ' ')
 		{
 			i++;
 			continue ;
 		}
 		else
-		{
-			free(line);
-			fclose(fp);
-			error(head);
-		}
+			error_in_parsing(fp, line, head);
 		i++;
 	}
 }
@@ -161,10 +178,12 @@ int	main(int argc, char **argv)
 	FILE *fp;
 	t_tokens *tokens;
 
-	if (argc > 1)
-		fp = fopen(argv[1], "r");
-	else
-		fp = stdin;
+	if (argc != 2)
+	{
+		fprintf(stderr, "error: usage ./C_JSON_PARSER file.json");
+		return (1);
+	}
+	fp = fopen(argv[1], "r");
 	if (!fp)
 	{
 		fprintf(stderr, "error opening file %s\n", argv[1]);
@@ -172,8 +191,8 @@ int	main(int argc, char **argv)
 	}
 	check_empty_file(fp);
 	tokens = read_file(fp);
+	fclose(fp);
 	lexing(&tokens);
 	lstclear(&tokens);
-	fclose(fp);
 	return (0);
 }
